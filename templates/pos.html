@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="es" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <title>Punto de Venta (POS) | Sistema</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="p-4">
+    <div class="container-fluid">
+        <!-- Barra superior -->
+        <div class="d-flex justify-content-between align-items-center mb-4 bg-secondary p-3 rounded">
+            <h3 class="text-warning m-0">🛒 Caja / Punto de Venta (POS)</h3>
+            <div>
+                <a href="/inventario" class="btn btn-outline-light me-2">📦 Ver Inventario</a>
+                <a href="/ventas" class="btn btn-info me-2">📊 Historial Ventas</a>
+                <a href="/logout" class="btn btn-danger">Salir</a>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- Columna de Productos Disponibles -->
+            <div class="col-md-7">
+                <h5 class="text-light mb-3">Productos Disponibles</h5>
+                <div class="row row-cols-1 row-cols-md-2 g-3">
+                    {% for p in productos %}
+                    <div class="col">
+                        <div class="card bg-dark border-secondary h-100">
+                            <div class="card-body d-flex flex-column justify-content-between">
+                                <div>
+                                    <h6 class="card-title text-warning fw-bold">{{ p.nombre }}</h6>
+                                    <p class="card-text text-muted small mb-1">Cód: {{ p.codigo_barras }}</p>
+                                    <p class="card-text fs-5 text-white">S/ {{ "%.2f"|format(p.precio) }}</p>
+                                    <span class="badge bg-secondary">Stock: {{ p.stock }}</span>
+                                </div>
+                                <button class="btn btn-success btn-sm mt-3 w-100 fw-bold" 
+                                    onclick="agregarAlCarrito({{ p.id }}, '{{ p.nombre }}', {{ p.precio }}, {{ p.stock }})">
+                                    + Agregar al Carrito
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Columna del Carrito de Compras -->
+            <div class="col-md-5">
+                <div class="card bg-dark border-warning p-3 sticky-top">
+                    <h4 class="text-warning mb-3">Ticket de Venta Actual</h4>
+                    
+                    <div class="table-responsive" style="max-height: 350px; overflow-y: auto;">
+                        <table class="table table-dark table-sm align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Item</th>
+                                    <th>Cant</th>
+                                    <th>Subtotal</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="tabla-carrito">
+                                <!-- Los productos agregados aparecerán aquí dinámicamente con JS -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <hr class="border-warning">
+                    
+                    <div class="d-flex justify-content-between fs-4 fw-bold text-white mb-3">
+                        <span>TOTAL:</span>
+                        <span id="total-pagar">S/ 0.00</span>
+                    </div>
+
+                    <button class="btn btn-warning w-100 py-2 fw-bold fs-5 text-dark" onclick="procesarVenta()">
+                        💸 COBRAR Y REGISTRAR VENTA
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Script del Carrito en JavaScript -->
+    <script>
+        let carrito = [];
+
+        function agregarAlCarrito(id, nombre, precio, stockMax) {
+            let item = carrito.find(p => p.id === id);
+            if (item) {
+                if (item.cantidad < stockMax) {
+                    item.cantidad++;
+                } else {
+                    alert("Stock máximo alcanzado");
+                }
+            } else {
+                carrito.push({ id, nombre, precio, cantidad: 1, stockMax });
+            }
+            actualizarCarrito();
+        }
+
+        function cambiarCantidad(id, delta) {
+            let item = carrito.find(p => p.id === id);
+            if (item) {
+                item.cantidad += delta;
+                if (item.cantidad <= 0) {
+                    carrito = carrito.filter(p => p.id !== id);
+                } else if (item.cantidad > item.stockMax) {
+                    item.cantidad = item.stockMax;
+                    alert("Stock máximo alcanzado");
+                }
+            }
+            actualizarCarrito();
+        }
+
+        function actualizarCarrito() {
+            let tbody = document.getElementById('tabla-carrito');
+            tbody.innerHTML = '';
+            let total = 0;
+
+            carrito.forEach(item => {
+                let subtotal = item.precio * item.cantidad;
+                total += subtotal;
+
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${item.nombre}<br><small class="text-muted">S/ ${item.precio.toFixed(2)} c/u</small></td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-light px-1 py-0" onclick="cambiarCantidad(${item.id}, -1)">-</button>
+                            <span class="mx-1">${item.cantidad}</span>
+                            <button class="btn btn-sm btn-outline-light px-1 py-0" onclick="cambiarCantidad(${item.id}, 1)">+</button>
+                        </td>
+                        <td>S/ ${subtotal.toFixed(2)}</td>
+                        <td><button class="btn btn-sm btn-danger py-0" onclick="cambiarCantidad(${item.id}, -${item.cantidad})">X</button></td>
+                    </tr>
+                `;
+            });
+
+            document.getElementById('total-pagar').innerText = `S/ ${total.toFixed(2)}`;
+        }
+
+        async function procesarVenta() {
+            if (carrito.length === 0) {
+                alert("El carrito está vacío");
+                return;
+            }
+
+            let total = carrito.reduce((sum, item) => sum + (item.precio * item.cantidad), 0);
+
+            let respuesta = await fetch('/procesar_venta', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ carrito, total })
+            });
+
+            let resultado = await respuesta.json();
+            if (resultado.success) {
+                alert("¡Venta registrada con éxito! ID de venta: " + resultado.venta_id);
+                carrito = [];
+                actualizarCarrito();
+                location.reload(); // Recarga para actualizar el stock visualmente
+            } else {
+                alert("Error al procesar la venta: " + resultado.message);
+            }
+        }
+    </script>
+</body>
+</html>
